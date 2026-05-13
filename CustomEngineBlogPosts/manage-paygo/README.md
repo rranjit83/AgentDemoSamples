@@ -134,19 +134,73 @@ The `alertId` field in this payload encodes a real subscription ID and resource 
 
 ### `BillingPolicyManagement_1_0_0_3.zip`
 
-An importable Power Automate solution containing:
-
-| Component | Purpose |
+| Property | Value |
 |---|---|
-| **Custom connector** (Power Platform Billing Policy API) | Calls `GET /licensing/billingPolicies` to list and look up billing policies by name — not available natively in the Admin V2 connector |
-| **HTTP endpoint flow** | Entry point for the runbook; receives subscription ID and resource group, resolves the billing policy name, and delegates to the child flow |
-| **UnlinkAllEnvironmentsFromBillingPolicy** (child flow) | Finds the billing policy by name, retrieves all linked environments, and calls `RemoveBillingPolicyEnvironment` for each one — returns a full audit log |
+| **Unique Name** | BillingPolicyManagement |
+| **Display Name** | Billing Policy Management Demo |
+| **Version** | 1.0.0.3 |
+| **Publisher** | MCS CAT (`mcscat`) |
+| **Type** | Unmanaged |
+
+An importable Power Automate solution containing **2 custom connectors** and **3 cloud flows**:
+
+#### Custom Connectors
+
+| Connector | Host | API Version | Operations |
+|---|---|---|---|
+| **Azure Usage** (`mcscat_azureusage`) | `management.azure.com` | `2025-03-01` | `Query_Usage` — POST to `/{scope}/providers/Microsoft.CostManagement/query` to retrieve cost/usage data with filters, aggregation, and grouping |
+| **Power Platform Billing Policy** (`mcscat_powerplatformbilliinpolicy`) | `api.powerplatform.com` | `2022-03-01-preview` | `ListBillingPolicies` — paginated list of tenant billing policies; `GetBillingPolicy` — retrieve a single policy by ID. Auth: OAuth 2.0 (`https://api.powerplatform.com/.default`) |
+
+#### Cloud Flows
+
+| Flow | Trigger | Description |
+|---|---|---|
+| **Poll Cost and Unlink Environments** | Recurrence (every 4 hours) | Queries Azure Cost Management for actual costs on a target resource group via the Azure Usage connector. If the last billing period's pre-tax cost exceeds **$65**, invokes the *UnlinkAllEnvironmentsFromResourceGroup* child flow to stop consumption. |
+| **UnlinkAllEnvironmentsFromResourceGroup** | HTTP POST (child flow) — accepts `resourceGroupName` and `subscriptionId` | Lists all billing policies, finds those whose billing instrument matches the given subscription and resource group, retrieves linked environments via the Power Platform Admin V2 connector, and unlinks each one. Returns an audit log. |
+| **UnlinkAllEnvironmentsFromBillingPolicy** | Manual (Button) — accepts `BillingPolicyName` | Lists all billing policies, matches by name, retrieves all linked environments, and calls `RemoveBillingPolicyEnvironment` for each one — returns a full audit log. |
+
+#### Connection References
+
+| Logical Name | Connector |
+|---|---|
+| `mcscat_sharedazureusage…` | Azure Usage (custom) |
+| `mcscat_sharedpowerplatformbilliinpolicy…` | Power Platform Billing Policy (custom) |
+| `new_sharedpowerplatformadminv2_498a1` | Power Platform Admin V2 (standard) |
+
+#### Unpacked Solution Structure
+
+```
+solution/
+├── BillingPolicyManagement_1_0_0_3.zip
+└── unpack/
+    ├── Connectors/
+    │   ├── mcscat_azureusage.xml
+    │   ├── mcscat_azureusage_connectionparameters.json
+    │   ├── mcscat_azureusage_openapidefinition.json
+    │   ├── mcscat_azureusage_iconblob.Png
+    │   ├── mcscat_azureusage_policytemplateinstances.json
+    │   ├── mcscat_powerplatformbilliinpolicy.xml
+    │   ├── mcscat_powerplatformbilliinpolicy_connectionparameters.json
+    │   ├── mcscat_powerplatformbilliinpolicy_openapidefinition.json
+    │   ├── mcscat_powerplatformbilliinpolicy_iconblob.Png
+    │   └── mcscat_powerplatformbilliinpolicy_policytemplateinstances.json
+    ├── Other/
+    │   ├── Customizations.xml
+    │   └── Solution.xml
+    └── Workflows/
+        ├── PollCostandUnlinkEnvironments-*.json
+        ├── UnlinkAllEnvironmentsFromBillingPolicy-*.json
+        └── UnlinkAllEnvironmentsFromResourceGroup-*.json
+```
 
 **To deploy:**
 1. Import the solution into a Power Platform environment where the connection owner has Power Platform Admin rights
-2. Authenticate the two custom connectors during import
-3. Copy the HTTP trigger URL from the entry point flow
-4. Paste that URL into `UnlinkBillingPolicyRunbook.ps1` at line 27
+2. Authenticate the three connectors during import (Azure Usage, Power Platform Billing Policy, Power Platform Admin V2)
+3. Update the `QueryScope` variable in the *Poll Cost and Unlink Environments* flow to target your Azure subscription/resource group
+4. Adjust the cost threshold (default: **$65**) in the same flow if needed
+5. Copy the HTTP trigger URL from the *UnlinkAllEnvironmentsFromResourceGroup* flow
+6. Paste that URL into `UnlinkBillingPolicyRunbook.ps1` at line 27
+7. Turn on the scheduled *Poll Cost and Unlink Environments* flow
 
 ---
 
